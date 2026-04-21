@@ -3,48 +3,56 @@ pragma solidity ^0.8.0;
 
 contract SlotRoguelike {
     mapping(address => uint256) public balances;
-    uint256 public constant SPIN_COST = 0.01 ether; // Coût d'un tirage (en $LUCK ou ETH natif)
+    uint256 public constant SPIN_COST = 0.01 ether;
 
-    // Événement émis à chaque tirage pour que Python puisse l'écouter
-    event SpinResult(address indexed player, bool won, uint256 amountWon);
+    // L'événement inclut maintenant les 3 rouleaux (reels) !
+    event SpinResult(address indexed player, uint8 reel1, uint8 reel2, uint8 reel3, uint256 amountWon);
 
-    // Le joueur dépose des fonds dans la machine
     function deposit() public payable {
         balances[msg.sender] += msg.value;
     }
 
-    // Fonction principale du tirage
     function spin() public {
         require(balances[msg.sender] >= SPIN_COST, "Fonds insuffisants pour jouer");
         
-        // On déduit la mise
         balances[msg.sender] -= SPIN_COST;
 
-        // MOCK ALÉATOIRE : Pour test local Ganache UNIQUEMENT. 
-        // En production, utilisez Chainlink VRF.
-        uint256 random = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, block.prevrandao))) % 100;
+        // 1. Création d'une "graine" pseudo-aléatoire (Mock pour Ganache)
+        uint256 randomHash = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, block.prevrandao)));
 
-        bool won = false;
+        // 2. Extraction de 3 chiffres entre 1 et 7
+        // (Modulo 7 donne 0 à 6. On ajoute 1 pour avoir 1 à 7)
+        uint8 reel1 = uint8((randomHash % 7) + 1);
+        uint8 reel2 = uint8(((randomHash / 100) % 7) + 1);
+        uint8 reel3 = uint8(((randomHash / 10000) % 7) + 1);
+
         uint256 winAmount = 0;
 
-        // Logique de base : 40% de chance de gagner (peut être modifié par des NFTs plus tard)
-        if (random < 40) {
-            won = true;
-            winAmount = SPIN_COST * 2; // Multiplicateur x2 basique
+        // 3. Condition de victoire : les 3 chiffres sont identiques
+        if (reel1 == reel2 && reel2 == reel3) {
+            
+            // 4. Calcul des gains progressifs selon le chiffre
+            if (reel1 == 1) winAmount = SPIN_COST * 2;       // 1-1-1 : x2
+            else if (reel1 == 2) winAmount = SPIN_COST * 3;  // 2-2-2 : x3
+            else if (reel1 == 3) winAmount = SPIN_COST * 4;  // 3-3-3 : x4
+            else if (reel1 == 4) winAmount = SPIN_COST * 5;  // 4-4-4 : x5
+            else if (reel1 == 5) winAmount = SPIN_COST * 7;  // 5-5-5 : x7
+            else if (reel1 == 6) winAmount = SPIN_COST * 10; // 6-6-6 : x10
+            else if (reel1 == 7) winAmount = SPIN_COST * 20; // 7-7-7 : x20 (Jackpot!)
+            
             balances[msg.sender] += winAmount;
         }
 
-        // On avertit l'interface (Python) du résultat
-        emit SpinResult(msg.sender, won, winAmount);
+        // On envoie les 3 chiffres et les gains dans la blockchain
+        emit SpinResult(msg.sender, reel1, reel2, reel3, winAmount);
     }
 
-    // Le joueur "Cash-out" (Retire ses gains)
     function cashOut() public {
         uint256 amount = balances[msg.sender];
         require(amount > 0, "Rien a retirer");
         
         balances[msg.sender] = 0;
-(bool success, ) = payable(msg.sender).call{value: amount}("");
-require(success, "Transfer failed");
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        require(success, "Transfer failed");
     }
 }
