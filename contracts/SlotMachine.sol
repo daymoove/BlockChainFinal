@@ -44,6 +44,7 @@ contract SlotRoguelike {
         require(amount > 0, "Rien a retirer");
         
         balances[msg.sender] = 0;
-        payable(msg.sender).transfer(amount);
+(bool success, ) = payable(msg.sender).call{value: amount}("");
+require(success, "Transfer failed");
     }
 }
