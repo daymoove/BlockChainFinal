@@ -13,3 +13,7 @@ states/
 # Optional
 .env
 .env.local
+
+#not push
+abi.json
+test.py
