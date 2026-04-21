@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Slot Roguelike (Python Backend)</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1e1e2f; color: white; text-align: center; padding: 50px; }
+        .container { max-width: 400px; margin: auto; background: #2a2a40; padding: 20px; border-radius: 10px; }
+        button { padding: 10px 20px; margin: 10px; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
+        #spinBtn { background: #e74c3c; color: white; font-size: 18px; }
+        #depositBtn { background: #3498db; color: white; }
+        .log { margin-top: 20px; padding: 10px; background: black; color: #0f0; font-family: monospace; height: 100px; overflow-y: auto; text-align: left; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎰 Slot Roguelike</h1>
+    <p>Solde Machine : <strong id="balance">0</strong> ETH</p>
+
+    <input type="number" id="depositAmount" value="0.05" step="0.01">
+    <button id="depositBtn">Déposer</button>
+    <br>
+    <button id="spinBtn">🎰 Lancer (0.01 ETH)</button>
+
+    <div class="log" id="logArea">Prêt à jouer.</div>
+</div>
+
+<script>
+    const logArea = document.getElementById('logArea');
+    const balanceText = document.getElementById('balance');
+
+    function log(msg) {
+        logArea.innerHTML += `<div>> ${msg}</div>`;
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    // Fonction pour demander à Python de lire le solde
+    async function updateBalance() {
+        const res = await fetch('/api/balance');
+        const data = await res.json();
+        balanceText.innerText = data.balance;
+    }
+
+    // Fonction pour demander à Python de déposer
+    document.getElementById('depositBtn').onclick = async () => {
+        const amount = document.getElementById('depositAmount').value;
+        log(`Dépôt de ${amount} ETH en cours...`);
+        const res = await fetch('/api/deposit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amount: amount})
+        });
+        const data = await res.json();
+        if(data.success) log("✅ Dépôt réussi");
+        else log("❌ Erreur : " + data.error);
+        updateBalance();
+    };
+
+    // Fonction pour demander à Python de jouer
+    document.getElementById('spinBtn').onclick = async () => {
+        log("🎰 Machine lancée...");
+        const res = await fetch('/api/spin', { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            if (data.won) log(`🎉 GAGNÉ ! Gain: ${data.amountWon} ETH`);
+            else log(`💀 PERDU !`);
+        } else {
+            log("❌ Erreur : " + data.error);
+        }
+        updateBalance();
+    };
+
+    // Charge le solde au démarrage
+    updateBalance();
+</script>
+
+</body>
+</html>
