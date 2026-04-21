@@ -59,17 +59,28 @@
 
     // Fonction pour demander à Python de jouer
     document.getElementById('spinBtn').onclick = async () => {
-        log("🎰 Machine lancée...");
-        const res = await fetch('/api/spin', { method: 'POST' });
-        const data = await res.json();
+        log("🎰 La machine tourne...");
         
-        if (data.success) {
-            if (data.won) log(`🎉 GAGNÉ ! Gain: ${data.amountWon} ETH`);
-            else log(`💀 PERDU !`);
-        } else {
-            log("❌ Erreur : " + data.error);
+        try {
+            const res = await fetch('/api/spin', { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.success) {
+                // On affiche les 3 chiffres de la machine !
+                log(`<strong>Résultat : [ ${data.reel1} | ${data.reel2} | ${data.reel3} ]</strong>`);
+                
+                if (data.won) {
+                    log(`🎉 GAGNÉ ! Multiplicateur appliqué. Gain : ${data.amountWon} ETH`);
+                } else {
+                    log(`💀 PERDU ! Vous perdez votre mise.`);
+                }
+            } else {
+                log("❌ Erreur : " + data.error);
+            }
+            updateBalance();
+        } catch (err) {
+            log("❌ Erreur de communication avec le serveur.");
         }
-        updateBalance();
     };
 
     // Charge le solde au démarrage

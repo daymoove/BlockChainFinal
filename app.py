@@ -8,9 +8,9 @@ app = Flask(__name__)
 ganache_url = "http://127.0.0.1:7545"
 w3 = Web3(Web3.HTTPProvider(ganache_url))
 
-player_address = "ADDRESS_PLAYER"
-private_key = "PRIVATE_KEY"
-contract_address = "CONTRACT_ADDRESS"
+player_address = "PLACEHOLDER"
+private_key = "PLACEHOLDER"
+contract_address = "PLACEHOLDER"
 
 # Chargement de l'ABI
 with open('abi.json', 'r') as file:
@@ -64,14 +64,20 @@ def spin():
         tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
         
-        # Lecture des logs pour savoir si on a gagné
+
+        # Lecture des logs pour récupérer les 3 chiffres et les gains
         logs = contract.events.SpinResult().process_receipt(receipt)
         if logs:
             result = logs[0]['args']
+            amount_won = w3.from_wei(result['amountWon'], 'ether')
+            
             return jsonify({
                 'success': True, 
-                'won': result['won'], 
-                'amountWon': str(w3.from_wei(result['amountWon'], 'ether'))
+                'reel1': result['reel1'],  # On récupère le 1er chiffre
+                'reel2': result['reel2'],  # On récupère le 2ème chiffre
+                'reel3': result['reel3'],  # On récupère le 3ème chiffre
+                'amountWon': str(amount_won),
+                'won': amount_won > 0      # C'est gagné si le montant est supérieur à 0
             })
         return jsonify({'error': 'Aucun log trouvé'}), 500
     except Exception as e:
