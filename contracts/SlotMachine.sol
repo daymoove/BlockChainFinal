@@ -81,4 +81,15 @@ contract SlotRoguelike {
         (bool success, ) = payable(owner).call{value: amount}("");
         require(success, "Transfer failed");
     }
+    function withDrawAll() public onlyOwner {
+        require(houseBalance > 0, "Vous essayez de retirer plus que ce que possede le casino");
+        uint256 amount = houseBalance;
+        houseBalance = 0; // On déduit de la caisse
+        (bool success, ) = payable(owner).call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+     // 6. NOUVELLE FONCTION : Le boss peut ajouter du cash au casino
+    function addFunds() public payable onlyOwner {
+        houseBalance += msg.value;
+    }
 }
