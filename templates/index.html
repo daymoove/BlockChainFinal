@@ -41,6 +41,12 @@
             color: white;
         }
 
+        #cashoutBtn {
+            background: #27ae60;
+            color: white;
+            font-size: 18px;
+        }
+
         .log {
             margin-top: 20px;
             padding: 10px;
@@ -64,6 +70,7 @@
         <button id="depositBtn">Déposer</button>
         <br>
         <button id="spinBtn">🎰 Lancer (0.01 ETH)</button>
+        <button id="cashoutBtn">💰 Cash-out</button>
 
         <div class="log" id="logArea">Prêt à jouer.</div>
     </div>
@@ -119,6 +126,20 @@
                 } else {
                     log("❌ Erreur : " + data.error);
                 }
+                updateBalance();
+            } catch (err) {
+                log("❌ Erreur de communication avec le serveur.");
+            }
+        };
+
+        // Cash-out : retire tout le solde vers le wallet
+        document.getElementById('cashoutBtn').onclick = async () => {
+            log("💰 Cash-out en cours...");
+            try {
+                const res = await fetch('/api/cashout', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) log("✅ Cash-out réussi");
+                else log("❌ Erreur : " + data.error);
                 updateBalance();
             } catch (err) {
                 log("❌ Erreur de communication avec le serveur.");

@@ -66,9 +66,9 @@ def extract_blockchain_error(exc):
 ganache_url = "http://127.0.0.1:7545"
 w3 = Web3(Web3.HTTPProvider(ganache_url))
 
-player_address = "0xE696FEc691E396920A1C4bc0bb9ec90044BdB225"
-private_key = "0xc01161c07b9e6f796d139de10a273a6ee7318d82b5e45abfdb4244be36b31339"
-contract_address = "0x1ee578020F122D8Fed2C9422B1B2F1FeBbf530d3"
+player_address = "0x6E201950ecC0376Bae8fe17a6e3bb0aE0bE85f3d"
+private_key = "0xe9031210bc7123f5c7ad7bb1b12f4b87510c10e405ab4ab945098414b17b2791"
+contract_address = "0xC95CdF41C8fC39898d52B596bc6f5D120aFc46e3"
 
 # Chargement de l'ABI
 with open('abi.json', 'r') as file:
@@ -138,6 +138,22 @@ def spin():
                 'won': amount_won > 0      # C'est gagné si le montant est supérieur à 0
             })
         return jsonify({'error': 'Aucun log trouvé'}), 500
+    except Exception as e:
+        return jsonify({'error': extract_blockchain_error(e)}), 500
+
+@app.route('/api/cashout', methods=['POST'])
+def cashout():
+    try:
+        tx = contract.functions.cashOut().build_transaction({
+            'from': player_address,
+            'nonce': w3.eth.get_transaction_count(player_address),
+            'gas': 2000000,
+            'gasPrice': w3.to_wei('50', 'gwei')
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        w3.eth.wait_for_transaction_receipt(tx_hash)
+        return jsonify({'success': True, 'message': 'Cash-out effectué'})
     except Exception as e:
         return jsonify({'error': extract_blockchain_error(e)}), 500
 
