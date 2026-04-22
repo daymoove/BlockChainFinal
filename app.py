@@ -98,6 +98,10 @@ def home():
 def background_image():
     return send_from_directory('.', 'hqdefault.jpg')
 
+@app.route('/sounds/<path:filename>')
+def sound_file(filename):
+    return send_from_directory('sounds', filename)
+
 @app.route('/api/balance', methods=['GET'])
 def get_balance():
     balance = contract.functions.balances(player_address).call()

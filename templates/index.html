@@ -371,6 +371,129 @@
             font-size: 13px;
         }
 
+        .settings-corner {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            z-index: 100;
+        }
+
+        .settings-corner button {
+            margin: 0;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            font-size: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            border: 1px solid rgba(245, 197, 66, 0.35);
+            background: linear-gradient(180deg, rgba(31, 31, 52, 0.85), rgba(15, 15, 28, 0.9));
+            color: var(--gold-2);
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+            transition: transform 0.3s ease, background 0.15s ease;
+        }
+
+        .settings-corner button:hover {
+            transform: rotate(45deg);
+        }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(245, 197, 66, 0.12);
+        }
+
+        .settings-row:last-of-type {
+            border-bottom: none;
+        }
+
+        .settings-row > label:not(.toggle) {
+            color: var(--text);
+            font-size: 0.9rem;
+            letter-spacing: 0.04em;
+            text-align: left;
+            flex: 1;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .settings-row .sublabel {
+            display: block;
+            color: var(--muted);
+            font-size: 0.7rem;
+            margin-top: 2px;
+            font-style: italic;
+        }
+
+        .settings-row input[type="range"] {
+            flex: 1;
+            max-width: 160px;
+            accent-color: var(--gold, #f5c542);
+        }
+
+        .settings-row .vol-value {
+            min-width: 36px;
+            text-align: right;
+            color: var(--gold-2);
+            font-variant-numeric: tabular-nums;
+            font-size: 0.85rem;
+        }
+
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+            flex: 0 0 44px;
+            flex-shrink: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle .slider {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(245, 197, 66, 0.3);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .toggle .slider::before {
+            content: "";
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 2px;
+            top: 2px;
+            background: var(--gold-2, #f5c542);
+            border-radius: 50%;
+            transition: transform 0.2s ease;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        }
+
+        .toggle input:checked + .slider {
+            background: linear-gradient(180deg, rgba(49, 208, 127, 0.3), rgba(20, 120, 60, 0.3));
+            border-color: rgba(49, 208, 127, 0.5);
+        }
+
+        .toggle input:checked + .slider::before {
+            transform: translateX(20px);
+        }
+
         .log {
             margin-top: 20px;
             padding: 14px;
@@ -616,6 +739,41 @@
         <button id="disconnectBtn" style="display:none;">🔌 Déconnecter</button>
     </div>
 
+    <div class="settings-corner">
+        <button id="settingsBtn" title="Paramètres" aria-label="Paramètres">⚙️</button>
+    </div>
+
+    <div class="modal-backdrop" id="settingsModal">
+        <div class="modal">
+            <h2>Paramètres</h2>
+            <div class="settings-row">
+                <label for="volumeRange">Volume</label>
+                <input type="range" id="volumeRange" min="0" max="100" value="80">
+                <span class="vol-value" id="volumeValue">80%</span>
+            </div>
+            <div class="settings-row">
+                <label for="muteToggle">Muet</label>
+                <label class="toggle" for="muteToggle">
+                    <input type="checkbox" id="muteToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="settings-row">
+                <label for="skipSpinToggle">
+                    Skip spin sound &amp; effect
+                    <span class="sublabel">Coupe le son de spin/loose et accélère l'animation</span>
+                </label>
+                <label class="toggle" for="skipSpinToggle">
+                    <input type="checkbox" id="skipSpinToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="modal-actions" style="margin-top:18px;">
+                <button class="no" id="settingsCloseBtn">Fermer</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-backdrop" id="forfeitModal">
         <div class="modal">
             <h2>Déconnexion</h2>
@@ -675,6 +833,49 @@
         const GANACHE_CHAIN_ID = '0x539'; // 1337
         const logArea = document.getElementById('logArea');
         const balanceText = document.getElementById('balance');
+
+        // --- Sons ---
+        const SPIN_COST = 0.01;
+        const SPIN_DURATION_MS = 2000;      // durée normale (ajustable)
+        const SPIN_DURATION_SKIP_MS = 350;  // durée quand "skip" est activé
+        const sndSpin     = new Audio('/sounds/spin.mp3');
+        const sndWin      = new Audio('/sounds/win.mp3');
+        const sndBust     = new Audio('/sounds/bust.mp3');
+        const sndCashout  = new Audio('/sounds/cashout.mp3');
+        const sndBankwin  = new Audio('/sounds/bankwin.mp3');
+        const allSounds = [sndSpin, sndWin, sndBust, sndCashout, sndBankwin];
+        allSounds.forEach(a => { a.preload = 'auto'; });
+
+        // --- Settings (sessionStorage : conservés pendant la session,
+        //     réinitialisés à la fermeture de l'onglet) ---
+        const settings = {
+            volume: 0.8,
+            muted: false,
+            skipSpin: false,
+        };
+        try {
+            const saved = JSON.parse(sessionStorage.getItem('slotSettings') || '{}');
+            if (typeof saved.volume === 'number') settings.volume = saved.volume;
+            if (typeof saved.muted === 'boolean') settings.muted = saved.muted;
+            if (typeof saved.skipSpin === 'boolean') settings.skipSpin = saved.skipSpin;
+        } catch (_) {}
+        // Nettoie l'ancien stockage persistant (migration)
+        try { localStorage.removeItem('slotSettings'); } catch (_) {}
+
+        function applyAudioSettings() {
+            const v = settings.muted ? 0 : settings.volume;
+            allSounds.forEach(a => { a.volume = v; });
+        }
+        function saveSettings() {
+            try { sessionStorage.setItem('slotSettings', JSON.stringify(settings)); } catch (_) {}
+        }
+        applyAudioSettings();
+
+        function playSfx(a, opts = {}) {
+            if (settings.muted) return;
+            if (opts.skippable && settings.skipSpin) return;
+            try { a.currentTime = 0; a.play().catch(() => {}); } catch (_) {}
+        }
         const reel1 = document.getElementById('reel1');
         const reel2 = document.getElementById('reel2');
         const reel3 = document.getElementById('reel3');
@@ -747,11 +948,13 @@
 
             reels.forEach((reel) => reel.classList.remove('winning'));
 
+            const reelStagger = settings.skipSpin ? 40 : 180;
+            const settleDelay = settings.skipSpin ? 120 : 420;
             reels.forEach((reel, index) => {
                 setTimeout(() => {
                     reel.classList.remove('spinning');
                     reel.textContent = finalValues[index];
-                }, index * 180);
+                }, index * reelStagger);
             });
 
             return new Promise((resolve) => {
@@ -767,7 +970,7 @@
                     }
 
                     resolve();
-                }, 420);
+                }, settleDelay);
             });
         }
         const connectBtn = document.getElementById('connectBtn');
@@ -882,6 +1085,7 @@
                 const res = await fetch('/api/forfeitToBank', { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
+                    playSfx(sndBankwin);
                     log(`✅ ${data.amount} ETH envoyés à la banque`);
                 } else {
                     log("❌ " + (data.error || 'Erreur'));
@@ -931,28 +1135,43 @@
         // Fonction pour demander à Python de jouer
         document.getElementById('spinBtn').onclick = async () => {
             if (!userAddress) { log("❌ Connecte MetaMask d'abord."); return; }
+            const currentBalance = parseFloat(balanceText.innerText || '0');
+            if (isNaN(currentBalance) || currentBalance < SPIN_COST) {
+                log(`❌ Fonds insuffisants (min ${SPIN_COST} ETH).`);
+                return;
+            }
             log("🎰 La machine tourne...");
+            playSfx(sndSpin, { skippable: true });
             startSpinAnimation();
+            const duration = settings.skipSpin ? SPIN_DURATION_SKIP_MS : SPIN_DURATION_MS;
+            const minDelay = new Promise(r => setTimeout(r, duration));
 
             try {
                 const res = await fetch('/api/spin', { method: 'POST' });
                 const data = await res.json();
+                await minDelay;
 
                 if (data.success) {
                     await stopSpinAnimation([data.reel1, data.reel2, data.reel3], data.won);
+                    try { sndSpin.pause(); } catch (_) {}
 
                     if (data.won) {
+                        playSfx(sndWin);
                         log(`🎉 GAGNÉ ! Multiplicateur appliqué. Gain : ${data.amountWon} ETH`);
                     } else {
+                        playSfx(sndBust, { skippable: true });
                         log(`💀 PERDU ! Vous perdez votre mise.`);
                     }
                 } else {
                     await stopSpinAnimation([7, 7, 7], false);
+                    try { sndSpin.pause(); } catch (_) {}
                     log("❌ Erreur : " + data.error);
                 }
                 updateBalance();
             } catch (err) {
+                await minDelay;
                 await stopSpinAnimation([7, 7, 7], false);
+                try { sndSpin.pause(); } catch (_) {}
                 log("❌ Erreur de communication avec le serveur.");
             }
         };
@@ -969,6 +1188,7 @@
                 });
                 const data = await res.json();
                 if (data.success) {
+                    playSfx(sndCashout);
                     log(`✅ ${data.amount} ETH renvoyés sur ${data.to}`);
                 } else {
                     log("❌ Erreur : " + data.error);
@@ -977,6 +1197,42 @@
             } catch (err) {
                 log("❌ Erreur de communication avec le serveur.");
             }
+        };
+
+        // --- Settings panel ---
+        const settingsModal   = document.getElementById('settingsModal');
+        const settingsBtn     = document.getElementById('settingsBtn');
+        const settingsCloseBtn= document.getElementById('settingsCloseBtn');
+        const volumeRange     = document.getElementById('volumeRange');
+        const volumeValue     = document.getElementById('volumeValue');
+        const muteToggle      = document.getElementById('muteToggle');
+        const skipSpinToggle  = document.getElementById('skipSpinToggle');
+
+        volumeRange.value   = Math.round(settings.volume * 100);
+        volumeValue.textContent = `${Math.round(settings.volume * 100)}%`;
+        muteToggle.checked  = settings.muted;
+        skipSpinToggle.checked = settings.skipSpin;
+
+        settingsBtn.onclick      = () => settingsModal.classList.add('open');
+        settingsCloseBtn.onclick = () => settingsModal.classList.remove('open');
+        settingsModal.onclick = (e) => {
+            if (e.target === settingsModal) settingsModal.classList.remove('open');
+        };
+
+        volumeRange.oninput = () => {
+            settings.volume = Number(volumeRange.value) / 100;
+            volumeValue.textContent = `${volumeRange.value}%`;
+            applyAudioSettings();
+            saveSettings();
+        };
+        muteToggle.onchange = () => {
+            settings.muted = muteToggle.checked;
+            applyAudioSettings();
+            saveSettings();
+        };
+        skipSpinToggle.onchange = () => {
+            settings.skipSpin = skipSpinToggle.checked;
+            saveSettings();
         };
 
         if (window.ethereum) {
