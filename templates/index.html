@@ -520,6 +520,92 @@
                 height: 118px;
             }
         }
+
+        /* --- Modale de confirmation (déconnexion avec balance > 0) --- */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(5px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal {
+            max-width: 420px;
+            width: 90%;
+            padding: 26px 24px;
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(31, 31, 52, 0.96), rgba(15, 15, 28, 0.98));
+            border: 1px solid rgba(245, 197, 66, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+            text-align: center;
+            color: var(--text);
+        }
+
+        .modal h2 {
+            margin: 0 0 10px;
+            color: var(--gold-2);
+            font-size: 1.3rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-shadow: 0 0 14px rgba(245, 197, 66, 0.4);
+        }
+
+        .modal p {
+            margin: 6px 0 14px;
+            color: var(--muted);
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .modal .fineprint {
+            font-size: 0.68rem;
+            color: rgba(191, 183, 163, 0.65);
+            margin: 14px 0 18px;
+            letter-spacing: 0.02em;
+            font-style: italic;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .modal-actions button {
+            padding: 10px 22px;
+            border-radius: 999px;
+            border: 1px solid rgba(245, 197, 66, 0.3);
+            background: rgba(0, 0, 0, 0.25);
+            color: var(--text);
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: transform 0.12s ease, background 0.12s ease;
+        }
+
+        .modal-actions button:hover {
+            transform: translateY(-1px);
+        }
+
+        .modal-actions .yes {
+            background: linear-gradient(180deg, rgba(255, 77, 77, 0.25), rgba(180, 40, 40, 0.3));
+            border-color: rgba(255, 77, 77, 0.55);
+            color: #ffe4e4;
+        }
+
+        .modal-actions .no {
+            background: linear-gradient(180deg, rgba(49, 208, 127, 0.2), rgba(20, 120, 60, 0.2));
+            border-color: rgba(49, 208, 127, 0.5);
+            color: #d7ffe8;
+        }
     </style>
 </head>
 
@@ -528,6 +614,18 @@
     <div class="wallet">
         <button id="connectBtn">🦊 Connecter MetaMask</button>
         <button id="disconnectBtn" style="display:none;">🔌 Déconnecter</button>
+    </div>
+
+    <div class="modal-backdrop" id="forfeitModal">
+        <div class="modal">
+            <h2>Déconnexion</h2>
+            <p>Votre solde machine n'est pas vide. Confirmer la déconnexion ?</p>
+            <div class="fineprint">Votre balance seras redirigé vers la banque en cas de déconnexion avec balance non vide</div>
+            <div class="modal-actions">
+                <button class="yes" id="forfeitYesBtn">Oui, déconnecter</button>
+                <button class="no" id="forfeitNoBtn">Non, annuler</button>
+            </div>
+        </div>
     </div>
 
     <div class="container">
@@ -565,7 +663,7 @@
             </div>
 
             <div style="margin-top: 14px;">
-                <button id="spinBtn">🎰 Lancer la roue</button>
+                <button id="spinBtn" disabled>🎰 Lancer la roue</button>
             </div>
         </div>
 
@@ -683,11 +781,13 @@
                 connectBtn.classList.add('connected');
                 connectBtn.disabled = true;
                 disconnectBtn.style.display = '';
+                spinButton.disabled = false;
             } else {
                 connectBtn.innerText = '🦊 Connecter MetaMask';
                 connectBtn.classList.remove('connected');
                 connectBtn.disabled = false;
                 disconnectBtn.style.display = 'none';
+                spinButton.disabled = true;
             }
         }
 
@@ -728,21 +828,18 @@
             if (!window.ethereum) { log("❌ MetaMask non installé."); return; }
             try {
                 if (!(await ensureGanacheNetwork())) return;
+                // Force MetaMask à afficher le sélecteur de compte à chaque clic
+                await window.ethereum.request({
+                    method: 'wallet_requestPermissions',
+                    params: [{ eth_accounts: {} }],
+                });
                 provider = new ethers.BrowserProvider(window.ethereum);
-                await provider.send("eth_requestAccounts", []);
                 signer = await provider.getSigner();
                 userAddress = await signer.getAddress();
 
                 // Récupère l'adresse du compte de jeu côté backend
                 const gRes = await fetch('/api/gameAccount');
                 gameAccount = (await gRes.json()).address;
-
-                // Enregistre l'utilisateur côté backend (pour le cashout)
-                await fetch('/api/connect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: userAddress }),
-                });
 
                 setConnectedUI(true);
                 log("✅ MetaMask connecté");
@@ -752,10 +849,49 @@
             }
         };
 
-        disconnectBtn.onclick = () => {
+        function doDisconnect() {
             provider = signer = userAddress = gameAccount = undefined;
             setConnectedUI(false);
             log("🔌 Déconnecté");
+        }
+
+        const forfeitModal = document.getElementById('forfeitModal');
+
+        disconnectBtn.onclick = async () => {
+            try {
+                const res = await fetch('/api/balance');
+                const data = await res.json();
+                if (parseFloat(data.balance) > 0) {
+                    forfeitModal.classList.add('open');
+                } else {
+                    doDisconnect();
+                }
+            } catch {
+                // En cas d'erreur, on ouvre la modale par précaution
+                forfeitModal.classList.add('open');
+            }
+        };
+
+        document.getElementById('forfeitNoBtn').onclick = () => {
+            forfeitModal.classList.remove('open');
+        };
+
+        document.getElementById('forfeitYesBtn').onclick = async () => {
+            log("🏦 Redirection du solde vers la banque...");
+            try {
+                const res = await fetch('/api/forfeitToBank', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    log(`✅ ${data.amount} ETH envoyés à la banque`);
+                } else {
+                    log("❌ " + (data.error || 'Erreur'));
+                }
+            } catch (err) {
+                log("❌ " + (err.message || err));
+            }
+            forfeitModal.classList.remove('open');
+            doDisconnect();
+            updateBalance();
         };
 
         async function updateBalance() {
@@ -794,6 +930,7 @@
 
         // Fonction pour demander à Python de jouer
         document.getElementById('spinBtn').onclick = async () => {
+            if (!userAddress) { log("❌ Connecte MetaMask d'abord."); return; }
             log("🎰 La machine tourne...");
             startSpinAnimation();
 
@@ -825,7 +962,11 @@
             if (!userAddress) { log("❌ Connecte MetaMask d'abord."); return; }
             log("💰 Cash-out en cours (contract -> jeu -> MetaMask)...");
             try {
-                const res = await fetch('/api/cashoutToUser', { method: 'POST' });
+                const res = await fetch('/api/cashoutToUser', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: userAddress }),
+                });
                 const data = await res.json();
                 if (data.success) {
                     log(`✅ ${data.amount} ETH renvoyés sur ${data.to}`);

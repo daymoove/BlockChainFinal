@@ -77,11 +77,9 @@ def build_transaction_base(from_address):
 ganache_url = "http://127.0.0.1:7545"
 w3 = Web3(Web3.HTTPProvider(ganache_url))
 
-player_address = "0xE696FEc691E396920A1C4bc0bb9ec90044BdB225"
-private_key = "0xc01161c07b9e6f796d139de10a273a6ee7318d82b5e45abfdb4244be36b31339"
-contract_address = "0x7cF752d98626C5b40789fDf77bCFF5BcF8FF67Fd"
-
-user_address = None
+player_address = "0x3D987b5C6956599Beefc7A39161Fa4e5B647631b"
+private_key = "0x76d04b221738e945c1f8596b93f49e692fdc8e278c42c683b63cae99572e4fc7"
+contract_address = "0xc3FA5b8114fE14E8D91926Dd8A988A9eEBC1e82c"
 
 # Chargement de l'ABI
 with open('abi.json', 'r') as file:
@@ -168,34 +166,23 @@ def game_account():
     return jsonify({'address': player_address})
 
 
-@app.route('/api/connect', methods=['POST'])
-def connect_user():
-    """Le front déclare ici l'adresse MetaMask du joueur après connexion."""
-    global user_address
-    data = request.json or {}
-    addr = (data.get('address') or '').strip()
-    if not addr:
-        return jsonify({'error': 'Adresse requise'}), 400
-    try:
-        user_address = Web3.to_checksum_address(addr)
-        return jsonify({
-            'success': True,
-            'userAddress': user_address,
-            'gameAccount': player_address,
-        })
-    except Exception:
-        return jsonify({'error': 'Adresse invalide'}), 400
-
-
 @app.route('/api/cashoutToUser', methods=['POST'])
 def cashout_to_user():
     """
+    L'adresse de destination est fournie par le front à chaque appel
+    (backend sans état sur l'utilisateur).
     1) Retire le solde du contract vers le compte de jeu (contract.cashOut()).
     2) Renvoie ces ETH du compte de jeu vers l'adresse MetaMask du joueur.
     """
-    global user_address
-    if not user_address:
-        return jsonify({'error': 'Aucun joueur connecté via MetaMask'}), 400
+    data = request.json or {}
+    raw_addr = (data.get('address') or '').strip()
+    if not raw_addr:
+        return jsonify({'error': 'Adresse destinataire requise'}), 400
+    try:
+        dest = Web3.to_checksum_address(raw_addr)
+    except Exception:
+        return jsonify({'error': 'Adresse invalide'}), 400
+
     try:
         # Montant à transférer : le solde courant du compte de jeu dans le contract.
         amount = contract.functions.balances(player_address).call()
@@ -216,7 +203,7 @@ def cashout_to_user():
         # 2. Transfert : compte de jeu -> MetaMask du joueur
         transfer = {
             'from': player_address,
-            'to': user_address,
+            'to': dest,
             'value': amount,
             'nonce': w3.eth.get_transaction_count(player_address),
             'gas': 21000,
@@ -230,7 +217,55 @@ def cashout_to_user():
         return jsonify({
             'success': True,
             'amount': str(w3.from_wei(amount, 'ether')),
-            'to': user_address,
+            'to': dest,
+        })
+    except Exception as e:
+        return jsonify({'error': extract_blockchain_error(e)}), 500
+
+
+@app.route('/api/forfeitToBank', methods=['POST'])
+def forfeit_to_bank():
+    """
+    Rend l'intégralité du solde du joueur à l'owner du contract.
+    1) cashOut() : contract -> compte de jeu
+    2) transfert : compte de jeu -> owner
+    """
+    try:
+        amount = contract.functions.balances(player_address).call()
+        if amount == 0:
+            return jsonify({'error': 'Rien a rediriger'}), 400
+
+        owner_addr = contract.functions.owner().call()
+
+        # 1. CashOut : contract -> compte de jeu
+        tx = contract.functions.cashOut().build_transaction({
+            'from': player_address,
+            'nonce': w3.eth.get_transaction_count(player_address),
+            'gas': 2000000,
+            'gasPrice': w3.to_wei('50', 'gwei')
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        # 2. Transfert : compte de jeu -> owner
+        transfer = {
+            'from': player_address,
+            'to': owner_addr,
+            'value': amount,
+            'nonce': w3.eth.get_transaction_count(player_address),
+            'gas': 21000,
+            'gasPrice': w3.to_wei('50', 'gwei'),
+            'chainId': w3.eth.chain_id,
+        }
+        signed_transfer = w3.eth.account.sign_transaction(transfer, private_key)
+        transfer_hash = w3.eth.send_raw_transaction(signed_transfer.raw_transaction)
+        w3.eth.wait_for_transaction_receipt(transfer_hash)
+
+        return jsonify({
+            'success': True,
+            'amount': str(w3.from_wei(amount, 'ether')),
+            'to': owner_addr,
         })
     except Exception as e:
         return jsonify({'error': extract_blockchain_error(e)}), 500
