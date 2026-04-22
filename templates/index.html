@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Slot Roguelike (Python Backend)</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
     <style>
         :root {
             --bg-1: #07070d;
@@ -334,6 +335,36 @@
             min-width: 140px;
         }
 
+        #connectBtn {
+            background: #f39c12;
+            color: white;
+        }
+
+        #connectBtn.connected {
+            background: #27ae60;
+            cursor: default;
+        }
+
+        #disconnectBtn {
+            background: #7f8c8d;
+            color: white;
+        }
+
+        .wallet {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            display: flex;
+            gap: 6px;
+            z-index: 100;
+        }
+
+        .wallet button {
+            margin: 0;
+            padding: 8px 14px;
+            font-size: 13px;
+        }
+
         .log {
             margin-top: 20px;
             padding: 14px;
@@ -488,6 +519,11 @@
 
 <body>
 
+    <div class="wallet">
+        <button id="connectBtn">🦊 Connecter MetaMask</button>
+        <button id="disconnectBtn" style="display:none;">🔌 Déconnecter</button>
+    </div>
+
     <div class="container">
         <h1>Slot</h1>
         <p class="subtitle">Neon casino interface</p>
@@ -532,6 +568,7 @@
     </div>
 
     <script>
+        const GANACHE_CHAIN_ID = '0x539'; // 1337
         const logArea = document.getElementById('logArea');
         const balanceText = document.getElementById('balance');
         const reel1 = document.getElementById('reel1');
@@ -628,79 +665,179 @@
                     resolve();
                 }, 420);
             });
-        }
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
 
-        function log(msg) {
-            logArea.innerHTML += `<div>> ${msg}</div>`;
-            logArea.scrollTop = logArea.scrollHeight;
-        }
+            let provider, signer, userAddress, gameAccount;
 
-        // Fonction pour demander à Python de lire le solde
-        async function updateBalance() {
-            const res = await fetch('/api/balance');
-            const data = await res.json();
-            balanceText.innerText = data.balance;
-        }
-
-        // Fonction pour demander à Python de déposer
-        document.getElementById('depositBtn').onclick = async () => {
-            const amount = document.getElementById('depositAmount').value;
-            log(`Dépôt de ${amount} ETH en cours...`);
-            const res = await fetch('/api/deposit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: amount })
-            });
-            const data = await res.json();
-            if (data.success) log("✅ Dépôt réussi");
-            else log("❌ Erreur : " + data.error);
-            updateBalance();
-        };
-
-        // Fonction pour demander à Python de jouer
-        document.getElementById('spinBtn').onclick = async () => {
-            log("🎰 La machine tourne...");
-            startSpinAnimation();
-
-            try {
-                const res = await fetch('/api/spin', { method: 'POST' });
-                const data = await res.json();
-
-                if (data.success) {
-                    await stopSpinAnimation([data.reel1, data.reel2, data.reel3], data.won);
-
-                    if (data.won) {
-                        log(`🎉 GAGNÉ ! Multiplicateur appliqué. Gain : ${data.amountWon} ETH`);
-                    } else {
-                        log(`💀 PERDU ! Vous perdez votre mise.`);
-                    }
+            function setConnectedUI(connected) {
+                if (connected) {
+                    connectBtn.innerText = '✅ Connecté';
+                    connectBtn.classList.add('connected');
+                    connectBtn.disabled = true;
+                    disconnectBtn.style.display = '';
                 } else {
-                    await stopSpinAnimation([7, 7, 7], false);
-                    log("❌ Erreur : " + data.error);
+                    connectBtn.innerText = '🦊 Connecter MetaMask';
+                    connectBtn.classList.remove('connected');
+                    connectBtn.disabled = false;
+                    disconnectBtn.style.display = 'none';
                 }
-                updateBalance();
-            } catch (err) {
-                await stopSpinAnimation([7, 7, 7], false);
-                log("❌ Erreur de communication avec le serveur.");
             }
-        };
 
-        // Cash-out : retire tout le solde vers le wallet
-        document.getElementById('cashoutBtn').onclick = async () => {
-            log("💰 Cash-out en cours...");
-            try {
-                const res = await fetch('/api/cashout', { method: 'POST' });
+            function log(msg) {
+                logArea.innerHTML += `<div>> ${msg}</div>`;
+                logArea.scrollTop = logArea.scrollHeight;
+            }
+
+            // --- MetaMask ---
+            async function ensureGanacheNetwork() {
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                if (chainId === GANACHE_CHAIN_ID) return true;
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: GANACHE_CHAIN_ID }],
+                    });
+                    return true;
+                } catch (e) {
+                    if (e.code === 4902) {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: GANACHE_CHAIN_ID,
+                                chainName: 'Ganache Local',
+                                rpcUrls: ['http://127.0.0.1:7545'],
+                                nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                            }],
+                        });
+                        return true;
+                    }
+                    log("❌ Merci de basculer sur Ganache dans MetaMask.");
+                    return false;
+                }
+            }
+
+            connectBtn.onclick = async () => {
+                if (!window.ethereum) { log("❌ MetaMask non installé."); return; }
+                try {
+                    if (!(await ensureGanacheNetwork())) return;
+                    provider = new ethers.BrowserProvider(window.ethereum);
+                    await provider.send("eth_requestAccounts", []);
+                    signer = await provider.getSigner();
+                    userAddress = await signer.getAddress();
+
+                    // Récupère l'adresse du compte de jeu côté backend
+                    const gRes = await fetch('/api/gameAccount');
+                    gameAccount = (await gRes.json()).address;
+
+                    // Enregistre l'utilisateur côté backend (pour le cashout)
+                    await fetch('/api/connect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address: userAddress }),
+                    });
+
+                    setConnectedUI(true);
+                    log("✅ MetaMask connecté");
+                    updateBalance();
+                } catch (err) {
+                    log("❌ " + (err.shortMessage || err.message || err));
+                }
+            };
+
+            disconnectBtn.onclick = () => {
+                provider = signer = userAddress = gameAccount = undefined;
+                setConnectedUI(false);
+                log("🔌 Déconnecté");
+            };
+
+            async function updateBalance() {
+                const res = await fetch('/api/balance');
                 const data = await res.json();
-                if (data.success) log("✅ Cash-out réussi");
-                else log("❌ Erreur : " + data.error);
-                updateBalance();
-            } catch (err) {
-                log("❌ Erreur de communication avec le serveur.");
+                balanceText.innerText = data.balance;
             }
-        };
 
-        // Charge le solde au démarrage
-        updateBalance();
+            // Dépôt : MetaMask envoie l'ETH au compte de jeu,
+            // puis le backend le dépose sur le contract.
+            document.getElementById('depositBtn').onclick = async () => {
+                if (!signer || !gameAccount) { log("❌ Connecte MetaMask d'abord."); return; }
+                const amount = document.getElementById('depositAmount').value;
+                log(`🦊 MetaMask : envoi de ${amount} ETH vers le compte de jeu...`);
+                try {
+                    const tx = await signer.sendTransaction({
+                        to: gameAccount,
+                        value: ethers.parseEther(amount),
+                    });
+                    await tx.wait();
+                    log(`✅ Transfert MetaMask OK, dépôt sur le contract...`);
+
+                    const res = await fetch('/api/deposit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ amount: amount }),
+                    });
+                    const data = await res.json();
+                    if (data.success) log("✅ Dépôt réussi sur le contract");
+                    else log("❌ Erreur : " + data.error);
+                    updateBalance();
+                } catch (err) {
+                    log("❌ " + (err.shortMessage || err.message || err));
+                }
+            };
+
+            // Fonction pour demander à Python de jouer
+            document.getElementById('spinBtn').onclick = async () => {
+                log("🎰 La machine tourne...");
+                startSpinAnimation();
+
+                try {
+                    const res = await fetch('/api/spin', { method: 'POST' });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        await stopSpinAnimation([data.reel1, data.reel2, data.reel3], data.won);
+
+                        if (data.won) {
+                            log(`🎉 GAGNÉ ! Multiplicateur appliqué. Gain : ${data.amountWon} ETH`);
+                        } else {
+                            log(`💀 PERDU ! Vous perdez votre mise.`);
+                        }
+                    } else {
+                        await stopSpinAnimation([7, 7, 7], false);
+                        log("❌ Erreur : " + data.error);
+                    }
+                    updateBalance();
+                } catch (err) {
+                    await stopSpinAnimation([7, 7, 7], false);
+                    log("❌ Erreur de communication avec le serveur.");
+                }
+            };
+
+            // Cash-out : contract -> compte de jeu -> MetaMask du joueur
+            document.getElementById('cashoutBtn').onclick = async () => {
+                if (!userAddress) { log("❌ Connecte MetaMask d'abord."); return; }
+                log("💰 Cash-out en cours (contract -> jeu -> MetaMask)...");
+                try {
+                    const res = await fetch('/api/cashoutToUser', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        log(`✅ ${data.amount} ETH renvoyés sur ${data.to}`);
+                    } else {
+                        log("❌ Erreur : " + data.error);
+                    }
+                    updateBalance();
+                } catch (err) {
+                    log("❌ Erreur de communication avec le serveur.");
+                }
+            };
+
+            if (window.ethereum) {
+                window.ethereum.on('accountsChanged', () => window.location.reload());
+                window.ethereum.on('chainChanged', () => window.location.reload());
+            }
+
+            // Charge le solde au démarrage
+            updateBalance();
     </script>
 
 </body>

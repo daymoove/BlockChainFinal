@@ -81,6 +81,8 @@ player_address = "0xE696FEc691E396920A1C4bc0bb9ec90044BdB225"
 private_key = "0xc01161c07b9e6f796d139de10a273a6ee7318d82b5e45abfdb4244be36b31339"
 contract_address = "0x7cF752d98626C5b40789fDf77bCFF5BcF8FF67Fd"
 
+user_address = None
+
 # Chargement de l'ABI
 with open('abi.json', 'r') as file:
     contract_abi = json.load(file)
@@ -154,6 +156,80 @@ def cashout():
         return jsonify({'success': True, 'message': 'Cash-out effectué'})
     except Exception as e:
         return jsonify({'error': extract_blockchain_error(e)}), 500
+
+@app.route('/api/gameAccount', methods=['GET'])
+def game_account():
+    """Adresse du compte de jeu (proxy) — le front y enverra l'ETH via MetaMask."""
+    return jsonify({'address': player_address})
+
+
+@app.route('/api/connect', methods=['POST'])
+def connect_user():
+    """Le front déclare ici l'adresse MetaMask du joueur après connexion."""
+    global user_address
+    data = request.json or {}
+    addr = (data.get('address') or '').strip()
+    if not addr:
+        return jsonify({'error': 'Adresse requise'}), 400
+    try:
+        user_address = Web3.to_checksum_address(addr)
+        return jsonify({
+            'success': True,
+            'userAddress': user_address,
+            'gameAccount': player_address,
+        })
+    except Exception:
+        return jsonify({'error': 'Adresse invalide'}), 400
+
+
+@app.route('/api/cashoutToUser', methods=['POST'])
+def cashout_to_user():
+    """
+    1) Retire le solde du contract vers le compte de jeu (contract.cashOut()).
+    2) Renvoie ces ETH du compte de jeu vers l'adresse MetaMask du joueur.
+    """
+    global user_address
+    if not user_address:
+        return jsonify({'error': 'Aucun joueur connecté via MetaMask'}), 400
+    try:
+        # Montant à transférer : le solde courant du compte de jeu dans le contract.
+        amount = contract.functions.balances(player_address).call()
+        if amount == 0:
+            return jsonify({'error': 'Rien a retirer'}), 400
+
+        # 1. CashOut : contract -> compte de jeu
+        tx = contract.functions.cashOut().build_transaction({
+            'from': player_address,
+            'nonce': w3.eth.get_transaction_count(player_address),
+            'gas': 2000000,
+            'gasPrice': w3.to_wei('50', 'gwei')
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        # 2. Transfert : compte de jeu -> MetaMask du joueur
+        transfer = {
+            'from': player_address,
+            'to': user_address,
+            'value': amount,
+            'nonce': w3.eth.get_transaction_count(player_address),
+            'gas': 21000,
+            'gasPrice': w3.to_wei('50', 'gwei'),
+            'chainId': w3.eth.chain_id,
+        }
+        signed_transfer = w3.eth.account.sign_transaction(transfer, private_key)
+        transfer_hash = w3.eth.send_raw_transaction(signed_transfer.raw_transaction)
+        w3.eth.wait_for_transaction_receipt(transfer_hash)
+
+        return jsonify({
+            'success': True,
+            'amount': str(w3.from_wei(amount, 'ether')),
+            'to': user_address,
+        })
+    except Exception as e:
+        return jsonify({'error': extract_blockchain_error(e)}), 500
+
 
 if __name__ == '__main__':
     # Lance le serveur local sur le port 5000
