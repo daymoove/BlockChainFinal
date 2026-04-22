@@ -32,22 +32,28 @@
             text-align: center;
             padding: 32px 16px;
             background:
+                linear-gradient(rgba(7, 7, 13, 0.78), rgba(20, 20, 40, 0.82)),
                 radial-gradient(circle at top, rgba(245, 197, 66, 0.18), transparent 28%),
                 radial-gradient(circle at 20% 20%, rgba(255, 77, 77, 0.14), transparent 20%),
                 radial-gradient(circle at 80% 15%, rgba(66, 183, 255, 0.12), transparent 20%),
-                linear-gradient(180deg, var(--bg-1), var(--bg-2));
+                url('/background-image');
+            background-size: cover, auto, auto, auto, cover;
+            background-position: center, center, center, center, center;
+            background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+            background-attachment: fixed;
         }
 
         .container {
             max-width: 720px;
             margin: auto;
-            background: linear-gradient(180deg, rgba(31, 31, 52, 0.96), rgba(15, 15, 28, 0.96));
+            background: linear-gradient(180deg, rgba(31, 31, 52, 0.88), rgba(15, 15, 28, 0.92));
             border: 1px solid rgba(245, 197, 66, 0.24);
             box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 24px 70px rgba(0, 0, 0, 0.5);
             padding: 28px 22px 24px;
             border-radius: 22px;
             position: relative;
             overflow: hidden;
+            backdrop-filter: blur(4px);
         }
 
         .container::before {

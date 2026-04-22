@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory
 from web3 import Web3
 import json
 import ast
@@ -94,6 +94,11 @@ contract = w3.eth.contract(address=contract_address, abi=contract_abi)
 def home():
     # Sert la page HTML qui se trouve dans le dossier 'templates'
     return render_template('index.html')
+
+
+@app.route('/background-image')
+def background_image():
+    return send_from_directory('.', 'hqdefault.jpg')
 
 @app.route('/api/balance', methods=['GET'])
 def get_balance():
